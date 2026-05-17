@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  password  String
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  meals     Meal[]
+  
+  @@map("users")
+}
+
+model Food {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  category    String
+  region      String
+  calories    Float
+  protein     Float
+  carbs       Float
+  fat         Float
+  fiber       Float
+  sodium      Float
+  sugar       Float
+  allergens   String
+  healthScore Int
+  servingSize String
+  ingredients String
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  
+  meals       Meal[]
+  
+  @@map("foods")
+}
+
+model Meal {
+  id        String   @id @default(cuid())
+  userId    String
+  foodId    Int
+  foodName  String
+  portion   Float    @default(1)
+  calories  Float
+  protein   Float
+  carbs     Float
+  fat       Float
+  fiber     Float
+  notes     String?
+  category  String
+  region    String
+  createdAt DateTime @default(now())
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  food      Food     @relation(fields: [foodId], references: [id])
+  
+  @@map("meals")
+}
+
+model OTP {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  @@map("otps")
+}
