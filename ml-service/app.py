@@ -1,18 +1,18 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import torch
-import torchvision.transforms as transforms
-from PIL import Image
 import io
 import numpy as np
 import cv2
 from typing import Dict, List
 import os
+import torch
+import torchvision.transforms as transforms
+from PIL import Image
 import timm
 
 app = FastAPI(title="NutriAI ML Service", version="1.0.0")
 
-# CORS
+#CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:8000"],
@@ -50,14 +50,14 @@ FOOD_CLASSES = [
     "waffles"
 ]
 
-# Image preprocessing - Same as training
+# Image preprocessing pipeline
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-# Load model
+#Load model
 model = None
 
 def load_model():
