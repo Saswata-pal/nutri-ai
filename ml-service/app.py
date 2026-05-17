@@ -1,5 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+
 import io
 import numpy as np
 import cv2
@@ -10,22 +12,17 @@ import torchvision.transforms as transforms
 from PIL import Image
 import timm
 
-app = FastAPI(title="NutriAI ML Service", version="1.0.0")
+# =========================
+# Model Configuration
+# =========================
 
-#CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Model configuration
 MODEL_PATH = "models/final_model.pth"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Food-101 dataset classes (101 classes) - Same as training
+# =========================
+# Food Classes
+# =========================
+
 FOOD_CLASSES = [
     "apple_pie", "baby_back_ribs", "baklava", "beef_carpaccio", "beef_tartare",
     "beet_salad", "beignets", "bibimbap", "bread_pudding", "breakfast_burrito",
@@ -50,39 +47,107 @@ FOOD_CLASSES = [
     "waffles"
 ]
 
-# Image preprocessing pipeline
+# =========================
+# Image Transform
+# =========================
+
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
 ])
 
-#Load model
+# =========================
+# Global Model Variable
+# =========================
+
 model = None
+
+# =========================
+# Load Model
+# =========================
 
 def load_model():
     global model
+
     try:
         if os.path.exists(MODEL_PATH):
-            # Load ViT model architecture
-            model = timm.create_model("vit_base_patch16_224", pretrained=False, num_classes=101)
+
+            # Create ViT model
+            model = timm.create_model(
+                "vit_base_patch16_224",
+                pretrained=False,
+                num_classes=101
+            )
+
             # Load trained weights
-            model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+            model.load_state_dict(
+                torch.load(MODEL_PATH, map_location=DEVICE)
+            )
+
             model = model.to(DEVICE)
             model.eval()
+
             print(f"✅ Model loaded successfully from {MODEL_PATH}")
+
         else:
-            print(f"⚠️ Model not found at {MODEL_PATH}. Using mock predictions.")
+            print(f"⚠️ Model not found at {MODEL_PATH}")
+            model = None
+
     except Exception as e:
         print(f"❌ Error loading model: {e}")
         model = None
 
-@app.on_event("startup")
-async def startup_event():
+# =========================
+# Lifespan Handler
+# =========================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    # Startup
     load_model()
+
+    yield
+
+    # Shutdown
+    print("🛑 NutriAI ML Service stopped")
+
+# =========================
+# FastAPI App
+# =========================
+
+app = FastAPI(
+    title="NutriAI ML Service",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# =========================
+# CORS
+# =========================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# =========================
+# Root Route
+# =========================
 
 @app.get("/")
 async def root():
+
     return {
         "service": "NutriAI ML Service",
         "status": "running",
@@ -91,31 +156,46 @@ async def root():
         "num_classes": len(FOOD_CLASSES)
     }
 
+# =========================
+# Health Route
+# =========================
+
 @app.get("/health")
 async def health():
+
     return {
         "status": "healthy",
         "model_status": "loaded" if model is not None else "not_loaded"
     }
 
+# =========================
+# Detection Function
+# =========================
+
 def detect_and_localize(image: Image.Image) -> Dict:
-    """
-    Perform object detection and localization
-    Returns bounding boxes and confidence scores
-    """
+
     img_array = np.array(image)
-    
-    # Object detection using contours
+
     gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
     edges = cv2.Canny(blurred, 50, 150)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+
+    contours, _ = cv2.findContours(
+        edges,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE
+    )
+
     if contours:
+
         largest_contour = max(contours, key=cv2.contourArea)
+
         x, y, w, h = cv2.boundingRect(largest_contour)
-        
+
         height, width = img_array.shape[:2]
+
         bbox = {
             "x": int(x),
             "y": int(y),
@@ -126,47 +206,69 @@ def detect_and_localize(image: Image.Image) -> Dict:
             "width_norm": round(w / width, 4),
             "height_norm": round(h / height, 4)
         }
+
     else:
+
         height, width = img_array.shape[:2]
+
         bbox = {
-            "x": 0, "y": 0, "width": width, "height": height,
-            "x_norm": 0.0, "y_norm": 0.0, "width_norm": 1.0, "height_norm": 1.0
+            "x": 0,
+            "y": 0,
+            "width": width,
+            "height": height,
+            "x_norm": 0.0,
+            "y_norm": 0.0,
+            "width_norm": 1.0,
+            "height_norm": 1.0
         }
-    
+
     return bbox
 
+# =========================
+# Classification Function
+# =========================
+
 def classify_food(image: Image.Image) -> Dict:
-    """
-    Classify food using the loaded model
-    """
+
     if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded. Please ensure final_model.pth exists in models/ directory.")
-    
-    # Real model prediction
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Ensure final_model.pth exists."
+        )
+
     img_tensor = transform(image).unsqueeze(0).to(DEVICE)
-    
+
     with torch.no_grad():
+
         outputs = model(img_tensor)
+
         probabilities = torch.nn.functional.softmax(outputs, dim=1)
+
         confidence, predicted = torch.max(probabilities, 1)
-        
-        # Get top 3 predictions
+
+        # Top 3 Predictions
         top3_prob, top3_idx = torch.topk(probabilities, 3)
-        
+
         top_predictions = []
+
         for i in range(3):
+
             idx = top3_idx[0][i].item()
+
             prob = top3_prob[0][i].item()
+
             if idx < len(FOOD_CLASSES):
+
                 top_predictions.append({
                     "name": FOOD_CLASSES[idx],
                     "confidence": round(prob * 100, 2)
                 })
-        
+
         predicted_idx = predicted.item()
+
         if predicted_idx >= len(FOOD_CLASSES):
             predicted_idx = 0
-        
+
         return {
             "food_id": predicted_idx + 1,
             "food_name": FOOD_CLASSES[predicted_idx],
@@ -174,55 +276,94 @@ def classify_food(image: Image.Image) -> Dict:
             "top_predictions": top_predictions
         }
 
+# =========================
+# Predict Endpoint
+# =========================
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    """
-    Complete food analysis: detection, localization, and classification
-    """
+
     try:
+
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert('RGB')
-        
-        # Step 1: Object Detection & Localization
+
+        image = Image.open(
+            io.BytesIO(contents)
+        ).convert("RGB")
+
+        # Detection
         bbox = detect_and_localize(image)
-        
-        # Step 2: Classification
+
+        # Classification
         classification = classify_food(image)
-        
+
         result = {
             "success": True,
+
             "detection": {
                 "bounding_box": bbox,
                 "detected": True
             },
+
             "classification": classification,
+
             "image_info": {
                 "width": image.width,
                 "height": image.height,
                 "format": image.format or "JPEG"
             }
         }
-        
+
         return result
-        
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction error: {str(e)}"
+        )
+
+# =========================
+# Batch Prediction Endpoint
+# =========================
 
 @app.post("/batch-predict")
 async def batch_predict(files: List[UploadFile] = File(...)):
-    """
-    Batch prediction for multiple images
-    """
+
     results = []
+
     for file in files:
+
         try:
+
             result = await predict(file)
+
             results.append(result)
+
         except Exception as e:
-            results.append({"success": False, "error": str(e), "filename": file.filename})
-    
-    return {"success": True, "results": results, "total": len(results)}
+
+            results.append({
+                "success": False,
+                "error": str(e),
+                "filename": file.filename
+            })
+
+    return {
+        "success": True,
+        "results": results,
+        "total": len(results)
+    }
+
+# =========================
+# Run Server
+# =========================
 
 if __name__ == "__main__":
+
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=5000
+    )
