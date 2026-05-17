@@ -8,7 +8,7 @@ Complete AI-Powered Food Analysis Application with Next.js 15 Frontend, Express.
 
 ```
 IndianFoodAI/
-├── frontend/              # Next.js 15 + React 19 UI
+├── frontend/             # Next.js 15 + React 19 UI
 │   ├── app/              # App Router pages
 │   ├── components/       # React components
 │   ├── lib/             # API client
