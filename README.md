@@ -256,6 +256,6 @@ For issues or questions:
 1. Check `COMPLETE_SETUP_GUIDE.md`
 2. Review `FOOD_CLASSES_REFERENCE.md`
 3. Verify all services are running
-4. Check console logs for errors
+4. DM in linkedin
 
 Built with ❤️ for food lovers and health enthusiasts worldwide
