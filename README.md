@@ -250,7 +250,7 @@ Your model was trained on:
 - Trained model file: `final_model.pth`
 - Gemini API key (free tier available)
 
-## 📞 Support
+##  Support
 
 For issues or questions:
 1. Check `COMPLETE_SETUP_GUIDE.md`
